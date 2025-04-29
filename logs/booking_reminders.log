@@ -1,0 +1,40 @@
+[2025-04-19 11:00:00] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-20 11:00:00)
+[2025-04-19 13:00:00] Starting booking reminders check (24hrs in advance)
+Found 1 bookings to remind (scheduled for 2025-04-20 13:00:00)
+ - Sent reminder for Booking ID: 97 to ariesytprem22@gmail.com
+Successfully sent 1 out of 1 reminders
+[2025-04-19 13:00:00] Starting booking reminders check (24hrs in advance)
+Found 1 bookings to remind (scheduled for 2025-04-20 13:00:00)
+ - Sent reminder for Booking ID: 97 to ariesytprem22@gmail.com
+Successfully sent 1 out of 1 reminders
+[2025-04-24 11:50:14] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 11:50:00)
+[2025-04-24 11:52:22] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 11:52:00)
+[2025-04-23 11:30:00] MANUAL TEST - Starting booking reminders check
+Found 1 bookings to remind (scheduled for 2025-04-24 11:30:00)
+ - TEST MODE: Would send reminder for Booking ID: 128 to ariesytprem22@gmail.com
+Successfully processed 1 out of 1 reminders
+[2025-04-24 11:56:22] Found 0 bookings to remind (scheduled for 2025-04-25 11:56:00)
+[2025-04-24 11:56:27] Found 0 bookings to remind (scheduled for 2025-04-25 11:56:00)
+[2025-04-23 11:30:00] Starting booking reminders check (24hrs in advance)
+Found 1 bookings to remind (scheduled for 2025-04-24 11:30:00)
+ - Sent reminder for Booking ID: 128 to ariesytprem22@gmail.com
+Successfully sent 1 out of 1 reminders
+[2025-04-24 12:03:08] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 12:03:00)
+[2025-04-24 12:46:05] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 12:46:00)
+[2025-04-24 12:46:12] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 12:46:00)
+[2025-04-24 11:30:00] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 11:30:00)
+[2025-04-24 11:30:00] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 11:30:00)
+[2025-04-24 11:30:00] Starting booking reminders check (24hrs in advance)
+Found 0 bookings to remind (scheduled for 2025-04-25 11:30:00)
+[2025-04-23 11:30:00] Starting booking reminders check (24hrs in advance)
+Found 1 bookings to remind (scheduled for 2025-04-24 11:30:00)
+ - Sent reminder for Booking ID: 128 to ariesytprem22@gmail.com
+Successfully sent 1 out of 1 reminders

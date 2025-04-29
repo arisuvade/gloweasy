@@ -1,0 +1,135 @@
+/* White, Gold, and Dark Green Theme */
+:root {
+    --white-primary: #FFFFFF;
+    --white-secondary: #F9F9F9;
+    --gold-primary: #D4AF37;
+    --gold-secondary: #F5D98F;
+    --dark-green: #1A3A32;
+    --text-dark: #333333;
+    --text-light: #F8F8F8;
+}
+
+body {
+    background-color: var(--white-primary);
+    color: var(--text-dark);
+    font-family: 'Montserrat', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.auth-container {
+    background-color: var(--white-primary);
+    border: 1px solid var(--white-secondary);
+    border-radius: 8px;
+    padding: 2rem;
+    max-width: 450px;
+    margin: 3rem auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.auth-container h2 {
+    color: var(--dark-green);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.auth-container .text-muted {
+    color: var(--text-dark) !important;
+    opacity: 0.7;
+}
+
+.form-control {
+    background-color: var(--white-secondary);
+    border: 1px solid #e0e0e0;
+    color: var(--text-dark);
+}
+
+.form-control:focus {
+    background-color: var(--white-secondary);
+    border-color: var(--gold-primary);
+    color: var(--text-dark);
+    box-shadow: 0 0 0 0.25rem rgba(212, 175, 55, 0.15);
+}
+
+.btn-primary {
+    background-color: var(--dark-green);
+    border-color: var(--dark-green);
+    color: var(--text-light);
+    font-weight: 600;
+    padding: 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background-color: #23483e;
+    border-color: #23483e;
+    color: var(--text-light);
+}
+
+.btn-outline-secondary {
+    border-color: #e0e0e0;
+    color: var(--text-dark);
+}
+
+.btn-outline-secondary:hover {
+    background-color: var(--white-secondary);
+    color: var(--text-dark);
+}
+
+.alert {
+    border-radius: 4px;
+}
+
+.alert-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-color: rgba(220, 53, 69, 0.3);
+    color: #dc3545;
+}
+
+a {
+    color: var(--dark-green);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+a:hover {
+    color: var(--gold-primary);
+    text-decoration: underline;
+}
+
+/* Password toggle button */
+#togglePassword {
+    background-color: var(--white-secondary);
+    border-left: none;
+}
+
+#togglePassword:hover {
+    background-color: #e8e8e8;
+}
+
+/* Logo styling */
+.auth-container img {
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.1));
+    max-height: 80px;
+    width: auto;
+}
+
+/* Gold accent elements */
+.gold-accent {
+    color: var(--gold-primary);
+}
+
+/* Responsive adjustments */
+@media (max-width: 576px) {
+    .auth-container {
+        margin: 1.5rem auto;
+        padding: 1.5rem;
+        border: none;
+        box-shadow: none;
+    }
+    
+    body {
+        background-color: var(--white-secondary);
+    }
+}

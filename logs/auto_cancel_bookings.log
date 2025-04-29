@@ -1,0 +1,20 @@
+[2025-04-21 16:37:13] Starting auto-cancel check (15 minutes threshold)
+Found 1 bookings to cancel (started at or before 2025-04-21 16:22:00)
+Error cancelling bookings: Unknown column 'updated_at' in 'field list'
+[2025-04-21 16:37:36] Starting auto-cancel check (15 minutes threshold)
+Found 1 bookings to cancel (started at or before 2025-04-21 16:22:00)
+Successfully cancelled 1 bookings
+ - Cancelled Booking ID: 93, Original Time: 2025-04-20 11:00:00
+[2025-04-21 19:55:36] Starting auto-cancel check (15 minutes threshold)
+Found 0 bookings to cancel (started at or before 2025-04-21 19:40:00)
+[2025-04-21 19:57:13] Starting auto-cancel check (15 minutes threshold)
+Found 3 bookings to cancel (started at or before 2025-04-21 19:42:00)
+Successfully cancelled 3 bookings
+ - Cancelled Booking ID: 95, Original Time: 2025-04-20 17:00:00
+ - Cancelled Booking ID: 97, Original Time: 2025-04-20 11:00:00
+ - Cancelled Booking ID: 115, Original Time: 2025-04-21 18:30:00
+[2025-04-21 19:57:28] Starting auto-cancel check (15 minutes threshold)
+Found 0 bookings to cancel (started at or before 2025-04-21 19:42:00)
+[2025-04-24 11:48:44] Starting auto-cancel check
+Found 0 active bookings to cancel
+No active bookings to cancel

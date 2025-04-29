@@ -1,0 +1,15 @@
+gagawing active yung booking:
+
+arisuvade-001-site1.qtempurl.com/scripts/update_booking_status.php?test=2025-04-20%2011:00:00
+
+
+
+aauto cancel yung booking:
+
+arisuvade-001-site1.qtempurl.com/scripts/auto_cancel_bookings.php
+
+
+
+magsesend ng reminder:
+
+arisuvade-001-site1.qtempurl.com/scripts/send_booking_reminders.php?test=2025-04-23%2011:30:00ww

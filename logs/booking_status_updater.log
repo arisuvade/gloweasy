@@ -1,0 +1,17 @@
+[2025-04-21 16:21:34] Starting booking status update check
+Found 0 bookings to update
+[2025-04-21 16:25:48] Starting booking status update check
+Found 1 bookings to update
+Error updating bookings: Unknown column 'updated_at' in 'field list'
+[2025-04-21 16:26:39] Starting booking status update check
+Found 1 bookings to update
+Successfully updated 1 bookings to Active status
+ - Booking ID: 93, Date: 2025-04-20, Time: 11:00:00
+[2025-04-24 15:13:29] Starting booking status update check
+Found 0 bookings to update
+[2025-04-24 15:13:31] Starting booking status update check
+Found 0 bookings to update
+[2025-04-24 11:30:00] Starting booking status update check
+Found 1 bookings to update
+Successfully updated 1 bookings to Active status
+ - Booking ID: 128, Date: 2025-04-24, Time: 11:30:00
