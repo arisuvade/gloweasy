@@ -123,8 +123,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Verify the booking belongs to admin's branch before updating
         $verify_stmt = $conn->prepare("
-            SELECT b.id 
+            SELECT b.id, b.user_id, b.branch_id, s.category 
             FROM bookings b
+            JOIN services s ON b.service_id = s.id
             JOIN branches br ON b.branch_id = br.id
             WHERE b.id = ? AND (br.name = ? OR ? = 'Owner')
         ");
@@ -133,12 +134,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $verify_result = $verify_stmt->get_result();
         
         if ($verify_result->num_rows > 0) {
-            // Only update membership_code if has_membership_card is 1
-            if ($has_membership_card == 1) {
-                $stmt = $conn->prepare("UPDATE bookings SET status = ?, has_membership_card = 1, membership_code = ? WHERE id = ?");
+            $booking = $verify_result->fetch_assoc();
+            $user_id = $booking['user_id'];
+            $branch_id = $booking['branch_id'];
+            $service_category = $booking['category'];
+            
+            // Determine card type based on service category
+            $card_type = ($service_category === 'Body Healing') ? 'Elite' : 'VIP';
+            
+            if ($has_membership_card == 1 && !empty($membership_code)) {
+                // Check if membership code already exists
+                $check_code = $conn->prepare("SELECT id FROM membership_members WHERE membership_code = ?");
+                $check_code->bind_param("s", $membership_code);
+                $check_code->execute();
+                $code_exists = $check_code->get_result()->num_rows > 0;
+                $check_code->close();
+                
+                if (!$code_exists) {
+                    // Add to membership_members table
+                    $insert_member = $conn->prepare("
+                        INSERT INTO membership_members 
+                        (user_id, branch_id, card_type, membership_code) 
+                        VALUES (?, ?, ?, ?)
+                    ");
+                    $insert_member->bind_param("iiss", $user_id, $branch_id, $card_type, $membership_code);
+                    $insert_member->execute();
+                    $insert_member->close();
+                }
+                
+                // Update booking with membership info
+                $stmt = $conn->prepare("
+                    UPDATE bookings 
+                    SET status = ?, has_membership_card = 1, membership_code = ? 
+                    WHERE id = ?
+                ");
                 $stmt->bind_param("ssi", $new_status, $membership_code, $booking_id);
             } else {
-                // Don't update has_membership_card or membership_code if regular is selected
+                // Regular booking - don't update membership fields
                 $stmt = $conn->prepare("UPDATE bookings SET status = ? WHERE id = ?");
                 $stmt->bind_param("si", $new_status, $booking_id);
             }
@@ -221,6 +253,8 @@ function formatDate($date) {
             --oblong-green: #2e8b57;
             --oblong-hover: #247a4a;
             --sidebar-width: 250px;
+            --oblong-green: #2e8b57;
+            --oblong-hover: #247a4a;
         }
 
         body {
@@ -529,6 +563,11 @@ function formatDate($date) {
             margin-top: 0.25rem;
             display: none;
         }
+
+        .btn-oblong {
+            background-color: var(--oblong-green); /* #2e8b57 */
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -674,7 +713,7 @@ function formatDate($date) {
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" name="decline_booking" class="btn btn-oblong">Confirm Decline</button>
+                        <button type="submit" name="decline_booking" class="btn" style="background-color: #dc3545; color: white;">Confirm Decline</button>
                     </div>
                 </form>
             </div>
@@ -715,7 +754,7 @@ function formatDate($date) {
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" name="update_status" class="btn btn-oblong">Complete Booking</button>
+                        <button type="submit" name="update_status" class="btn" style="background-color: var(--secondary-green); color: white;">Complete Booking</button>
                     </div>
                 </form>
             </div>
