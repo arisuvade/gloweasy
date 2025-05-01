@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['update_status'])) {
         $booking_id = $_POST['booking_id'];
         $new_status = $_POST['status'];
-        $has_membership_card = isset($_POST['has_membership_card']) ? 1 : 0;
+        $has_membership_card = isset($_POST['has_membership_card']) ? (int)$_POST['has_membership_card'] : 0;
         $membership_code = isset($_POST['membership_code']) ? trim($_POST['membership_code']) : null;
         
         // Verify the booking belongs to admin's branch before updating
@@ -133,17 +133,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $verify_result = $verify_stmt->get_result();
         
         if ($verify_result->num_rows > 0) {
-            $stmt = $conn->prepare("UPDATE bookings SET status = ?, has_membership_card = ?, membership_code = ? WHERE id = ?");
-            $stmt->bind_param("sisi", $new_status, $has_membership_card, $membership_code, $booking_id);
+            // Only update membership_code if has_membership_card is 1
+            if ($has_membership_card == 1) {
+                $stmt = $conn->prepare("UPDATE bookings SET status = ?, has_membership_card = 1, membership_code = ? WHERE id = ?");
+                $stmt->bind_param("ssi", $new_status, $membership_code, $booking_id);
+            } else {
+                // Don't update has_membership_card or membership_code if regular is selected
+                $stmt = $conn->prepare("UPDATE bookings SET status = ? WHERE id = ?");
+                $stmt->bind_param("si", $new_status, $booking_id);
+            }
+            
             $stmt->execute();
             $stmt->close();
             
-            // Set success message in session
             $_SESSION['success_message'] = "Booking status updated successfully!";
         }
         $verify_stmt->close();
         
-        // Redirect to refresh the page
         header("Location: manage_bookings.php");
         exit();
     }
@@ -769,16 +775,18 @@ function formatDate($date) {
             const hasCard = $(this).data('has-card');
             $('#completeBookingId').val(bookingId);
             
-            // Set initial selection based on existing value
+            // Reset UI to default state
             $('.membership-option').removeClass('selected');
+            $('.membership-option[data-value="0"]').addClass('selected');
+            $('#membershipCardValue').val(0);
+            $('#membershipCodeContainer').hide();
+            $('#membershipCode').removeClass('is-invalid').val('');
+            
+            // If booking already has membership, set that as selected
             if (hasCard == 1) {
                 $('.membership-option[data-value="1"]').addClass('selected');
                 $('#membershipCardValue').val(1);
                 $('#membershipCodeContainer').show();
-            } else {
-                $('.membership-option[data-value="0"]').addClass('selected');
-                $('#membershipCardValue').val(0);
-                $('#membershipCodeContainer').hide();
             }
             
             completeModal.show();
@@ -791,7 +799,6 @@ function formatDate($date) {
             const selectedValue = $(this).data('value');
             $('#membershipCardValue').val(selectedValue);
             
-            // Show/hide membership code field based on selection
             if (selectedValue == 1) {
                 $('#membershipCodeContainer').show();
             } else {
