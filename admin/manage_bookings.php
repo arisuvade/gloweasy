@@ -38,12 +38,15 @@ $searchTerm = $_GET['search'] ?? '';
 
 // Base query
 $query = "
-    SELECT b.id, b.receipt_number, u.name AS user_name, u.email AS user_email, 
+    SELECT b.id, b.receipt_number, 
+           COALESCE(m.customer_name, u.name) AS user_name, 
+           COALESCE(m.customer_email, u.email) AS user_email, 
            b.booking_date, b.booking_time, b.status, br.name AS branch_name,
-           b.has_membership_card
+           b.has_membership_card, b.membership_code
     FROM bookings b
     JOIN users u ON b.user_id = u.id
     JOIN branches br ON b.branch_id = br.id
+    LEFT JOIN membership_members m ON b.membership_code = m.membership_code
     WHERE 1=1
 ";
 
@@ -70,12 +73,14 @@ if ($filterStatus !== 'all') {
     }
 }
 if (!empty($searchTerm)) {
-    $query .= " AND (b.receipt_number LIKE ? OR u.name LIKE ? OR u.email LIKE ?)";
+    $query .= " AND (b.receipt_number LIKE ? OR u.name LIKE ? OR u.email LIKE ? OR m.customer_name LIKE ? OR m.customer_email LIKE ?)";
     $searchParam = "%$searchTerm%";
     $params[] = $searchParam;
     $params[] = $searchParam;
     $params[] = $searchParam;
-    $types .= "sss";
+    $params[] = $searchParam;
+    $params[] = $searchParam;
+    $types .= "sssss";
 }
 
 // Add sorting - upcoming first, completed/cancelled last
@@ -120,6 +125,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new_status = $_POST['status'];
         $has_membership_card = isset($_POST['has_membership_card']) ? (int)$_POST['has_membership_card'] : 0;
         $membership_code = isset($_POST['membership_code']) ? trim($_POST['membership_code']) : null;
+        $customer_name = isset($_POST['customer_name']) ? trim($_POST['customer_name']) : null;
+        $customer_email = isset($_POST['customer_email']) ? trim($_POST['customer_email']) : null;
         
         // Verify the booking belongs to admin's branch before updating
         $verify_stmt = $conn->prepare("
@@ -151,13 +158,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $check_code->close();
                 
                 if (!$code_exists) {
-                    // Add to membership_members table
+                    // Add to membership_members table with customer name and email
                     $insert_member = $conn->prepare("
                         INSERT INTO membership_members 
-                        (user_id, branch_id, card_type, membership_code) 
-                        VALUES (?, ?, ?, ?)
+                        (user_id, branch_id, card_type, membership_code, customer_name, customer_email) 
+                        VALUES (?, ?, ?, ?, ?, ?)
                     ");
-                    $insert_member->bind_param("iiss", $user_id, $branch_id, $card_type, $membership_code);
+                    $insert_member->bind_param("iissss", $user_id, $branch_id, $card_type, $membership_code, $customer_name, $customer_email);
                     $insert_member->execute();
                     $insert_member->close();
                 }
@@ -640,7 +647,9 @@ function formatDate($date) {
                                     <!-- Active status actions -->
                                     <button class="action-btn accept-btn complete-btn" 
                                             data-booking-id="<?= $booking['id'] ?>"
-                                            data-has-card="<?= $booking['has_membership_card'] ?>">
+                                            data-has-card="<?= $booking['has_membership_card'] ?>"
+                                            data-customer-name="<?= htmlspecialchars($booking['user_name']) ?>"
+                                            data-customer-email="<?= htmlspecialchars($booking['user_email']) ?>">
                                         <i class="bi bi-check-circle"></i> Complete
                                     </button>
                                     <button class="action-btn view-btn view-btn" 
@@ -731,6 +740,8 @@ function formatDate($date) {
                 <form id="completeBookingForm" action="manage_bookings.php" method="POST">
                     <input type="hidden" name="booking_id" id="completeBookingId">
                     <input type="hidden" name="status" value="Completed">
+                    <input type="hidden" name="customer_name" id="customerName">
+                    <input type="hidden" name="customer_email" id="customerEmail">
                     <div class="modal-body">
                         <div class="mb-3">
                             <p>Did the customer use a VIP/Elite membership card?</p>
@@ -812,7 +823,12 @@ function formatDate($date) {
         $('.complete-btn').click(function() {
             const bookingId = $(this).data('booking-id');
             const hasCard = $(this).data('has-card');
+            const customerName = $(this).data('customer-name');
+            const customerEmail = $(this).data('customer-email');
+            
             $('#completeBookingId').val(bookingId);
+            $('#customerName').val(customerName);
+            $('#customerEmail').val(customerEmail);
             
             // Reset UI to default state
             $('.membership-option').removeClass('selected');
@@ -877,13 +893,13 @@ function formatDate($date) {
         });
 
         $('#completeModal').on('show.bs.modal', function () {
-        $('.membership-option').removeClass('selected');
-        $('.membership-option[data-value="0"]').addClass('selected');
-        $('#membershipCardValue').val(0);
-        $('#membershipCodeContainer').hide();
-        $('#membershipCode').removeClass('is-invalid').val('');
-        $('#membershipCodeError').hide();
-    });
+            $('.membership-option').removeClass('selected');
+            $('.membership-option[data-value="0"]').addClass('selected');
+            $('#membershipCardValue').val(0);
+            $('#membershipCodeContainer').hide();
+            $('#membershipCode').removeClass('is-invalid').val('');
+            $('#membershipCodeError').hide();
+        });
 
         // Reset filters
         $('#resetFilters').click(function() {

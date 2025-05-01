@@ -57,6 +57,43 @@ $result = $stmt->get_result();
 $total_income = $result->fetch_assoc()['total_income'] ?? 0;
 $stmt->close();
 
+// Fetch today's income
+$today = date('Y-m-d');
+$stmt = $conn->prepare("
+    SELECT SUM(
+        CASE 
+            WHEN b.has_membership_card = 1 THEN b.vip_elite_amount 
+            ELSE b.total_amount 
+        END
+    ) AS today_income
+    FROM bookings b
+    WHERE b.status = 'completed' AND DATE(b.created_at) = ?
+");
+$stmt->bind_param("s", $today);
+$stmt->execute();
+$result = $stmt->get_result();
+$today_income = $result->fetch_assoc()['today_income'] ?? 0;
+$stmt->close();
+
+// Fetch weekly income
+$week_start = date('Y-m-d', strtotime('last monday'));
+$week_end = date('Y-m-d', strtotime('next sunday'));
+$stmt = $conn->prepare("
+    SELECT SUM(
+        CASE 
+            WHEN b.has_membership_card = 1 THEN b.vip_elite_amount 
+            ELSE b.total_amount 
+        END
+    ) AS weekly_income
+    FROM bookings b
+    WHERE b.status = 'completed' AND DATE(b.created_at) BETWEEN ? AND ?
+");
+$stmt->bind_param("ss", $week_start, $week_end);
+$stmt->execute();
+$result = $stmt->get_result();
+$weekly_income = $result->fetch_assoc()['weekly_income'] ?? 0;
+$stmt->close();
+
 // Fetch booking status counts (all branches)
 $status_counts = [];
 $statuses = ['Pending', 'Active', 'Completed', 'Cancelled'];
@@ -70,17 +107,32 @@ foreach ($statuses as $status) {
     $stmt->close();
 }
 
-// Fetch membership card statistics
+// Fetch total online clients (users who have made at least one booking)
 $stmt = $conn->prepare("
-    SELECT 
-        COUNT(DISTINCT user_id) AS total_membership_users,
-        SUM(CASE WHEN has_membership_card = 1 THEN 1 ELSE 0 END) AS total_membership_bookings
+    SELECT COUNT(DISTINCT user_id) AS total_online_clients
+    FROM bookings
+");
+$stmt->execute();
+$result = $stmt->get_result();
+$total_online_clients = $result->fetch_assoc()['total_online_clients'] ?? 0;
+$stmt->close();
+
+// Fetch membership users count from membership_members table
+$stmt = $conn->prepare("SELECT COUNT(id) AS total_membership_users FROM membership_members");
+$stmt->execute();
+$result = $stmt->get_result();
+$total_membership_users = $result->fetch_assoc()['total_membership_users'] ?? 0;
+$stmt->close();
+
+// Fetch total membership bookings
+$stmt = $conn->prepare("
+    SELECT COUNT(id) AS total_membership_bookings
     FROM bookings
     WHERE has_membership_card = 1
 ");
 $stmt->execute();
 $result = $stmt->get_result();
-$membership_stats = $result->fetch_assoc();
+$total_membership_bookings = $result->fetch_assoc()['total_membership_bookings'] ?? 0;
 $stmt->close();
 
 // Fetch branch-wise statistics
@@ -347,18 +399,28 @@ function getStatusBadge($status) {
                     <div class="stats-icon">
                         <i class="bi bi-people"></i>
                     </div>
-                    <div class="stats-title">Total Clients</div>
-                    <div class="stats-value"><?= $total_users ?></div>
+                    <div class="stats-title">Total Online Clients</div>
+                    <div class="stats-value"><?= $total_online_clients ?></div>
                 </div>
             </div>
             
             <div class="col-md-3 mb-3">
                 <div class="stats-card">
                     <div class="stats-icon">
-                        <i class="bi bi-calendar-check"></i>
+                        <i class="bi bi-cash-stack"></i>
                     </div>
-                    <div class="stats-title">Total Bookings</div>
-                    <div class="stats-value"><?= $total_bookings ?></div>
+                    <div class="stats-title">Today Income</div>
+                    <div class="stats-value"><?= formatCurrency($today_income) ?></div>
+                </div>
+            </div>
+            
+            <div class="col-md-3 mb-3">
+                <div class="stats-card">
+                    <div class="stats-icon">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
+                    <div class="stats-title">Weekly Income</div>
+                    <div class="stats-value"><?= formatCurrency($weekly_income) ?></div>
                 </div>
             </div>
             
@@ -369,16 +431,6 @@ function getStatusBadge($status) {
                     </div>
                     <div class="stats-title">Total Income</div>
                     <div class="stats-value"><?= formatCurrency($total_income) ?></div>
-                </div>
-            </div>
-            
-            <div class="col-md-3 mb-3">
-                <div class="stats-card">
-                    <div class="stats-icon">
-                        <i class="bi bi-credit-card"></i>
-                    </div>
-                    <div class="stats-title">Membership Users</div>
-                    <div class="stats-value"><?= $membership_stats['total_membership_users'] ?? 0 ?></div>
                 </div>
             </div>
         </div>
@@ -460,47 +512,17 @@ function getStatusBadge($status) {
                                 <i class="bi bi-people"></i>
                             </div>
                             <div class="stats-title">Total Membership Users</div>
-                            <div class="stats-value"><?= $membership_stats['total_membership_users'] ?? 0 ?></div>
+                            <div class="stats-value"><?= $total_membership_users ?></div>
                         </div>
                         <div class="stats-card mt-3">
                             <div class="stats-icon">
                                 <i class="bi bi-calendar-check"></i>
                             </div>
                             <div class="stats-title">Total Membership Bookings</div>
-                            <div class="stats-value"><?= $membership_stats['total_membership_bookings'] ?? 0 ?></div>
+                            <div class="stats-value"><?= $total_membership_bookings ?></div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Top Performers
-                <div class="card">
-                    <div class="card-header">
-                        <h3 class="card-title"><i class="bi bi-trophy"></i> Top Performers</h3>
-                    </div>
-                    <div class="card-body">
-                        <?php if ($top_service): ?>
-                            <div class="stats-card mb-3">
-                                <div class="stats-icon">
-                                    <i class="bi bi-heart"></i>
-                                </div>
-                                <div class="stats-title">Top Service</div>
-                                <div class="stats-value"><?= htmlspecialchars($top_service['name']) ?></div>
-                                <div class="stats-title"><?= $top_service['service_count'] ?> bookings</div>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($top_therapist): ?>
-                            <div class="stats-card">
-                                <div class="stats-icon">
-                                    <i class="bi bi-person-hearts"></i>
-                                </div>
-                                <div class="stats-title">Top Therapist</div>
-                                <div class="stats-value"><?= htmlspecialchars($top_therapist['name']) ?></div>
-                                <div class="stats-title"><?= $top_therapist['therapist_count'] ?> bookings</div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div> -->
             </div>
         </div>
     </div>

@@ -116,6 +116,70 @@ foreach ($statuses as $status) {
     $stmt->close();
 }
 
+// Fetch today's income (branch-specific if not superadmin)
+if ($is_superadmin) {
+    $stmt = $conn->prepare("
+        SELECT SUM(
+            CASE 
+                WHEN b.has_membership_card = 1 THEN b.vip_elite_amount 
+                ELSE b.total_amount 
+            END
+        ) AS today_income
+        FROM bookings b
+        WHERE b.status = 'completed' AND DATE(b.created_at) = CURDATE()
+    ");
+} else {
+    $stmt = $conn->prepare("
+        SELECT SUM(
+            CASE 
+                WHEN b.has_membership_card = 1 THEN b.vip_elite_amount 
+                ELSE b.total_amount 
+            END
+        ) AS today_income
+        FROM bookings b
+        JOIN branches br ON b.branch_id = br.id
+        WHERE b.status = 'completed' AND br.name = ? AND DATE(b.created_at) = CURDATE()
+    ");
+    $stmt->bind_param("s", $branch);
+}
+$stmt->execute();
+$result = $stmt->get_result();
+$today_income = $result->fetch_assoc()['today_income'] ?? 0;
+$stmt->close();
+
+// Fetch weekly income (branch-specific if not superadmin)
+if ($is_superadmin) {
+    $stmt = $conn->prepare("
+        SELECT SUM(
+            CASE 
+                WHEN b.has_membership_card = 1 THEN b.vip_elite_amount 
+                ELSE b.total_amount 
+            END
+        ) AS weekly_income
+        FROM bookings b
+        WHERE b.status = 'completed' 
+        AND YEARWEEK(b.created_at, 1) = YEARWEEK(CURDATE(), 1)
+    ");
+} else {
+    $stmt = $conn->prepare("
+        SELECT SUM(
+            CASE 
+                WHEN b.has_membership_card = 1 THEN b.vip_elite_amount 
+                ELSE b.total_amount 
+            END
+        ) AS weekly_income
+        FROM bookings b
+        JOIN branches br ON b.branch_id = br.id
+        WHERE b.status = 'completed' AND br.name = ?
+        AND YEARWEEK(b.created_at, 1) = YEARWEEK(CURDATE(), 1)
+    ");
+    $stmt->bind_param("s", $branch);
+}
+$stmt->execute();
+$result = $stmt->get_result();
+$weekly_income = $result->fetch_assoc()['weekly_income'] ?? 0;
+$stmt->close();
+
 // Fetch upcoming appointment (single)
 if ($is_superadmin) {
     $stmt = $conn->prepare("
@@ -514,10 +578,20 @@ function getStatusBadge($status) {
             <div class="col-md-3 mb-3">
                 <div class="stats-card">
                     <div class="stats-icon">
-                        <i class="bi bi-calendar-check"></i>
+                        <i class="bi bi-cash"></i>
                     </div>
-                    <div class="stats-title">Total Bookings</div>
-                    <div class="stats-value"><?= $total_bookings ?></div>
+                    <div class="stats-title">Today Income</div>
+                    <div class="stats-value">₱<?= number_format($today_income, 2) ?></div>
+                </div>
+            </div>
+            
+            <div class="col-md-3 mb-3">
+                <div class="stats-card">
+                    <div class="stats-icon">
+                        <i class="bi bi-cash"></i>
+                    </div>
+                    <div class="stats-title">Weekly Income</div>
+                    <div class="stats-value">₱<?= number_format($weekly_income, 2) ?></div>
                 </div>
             </div>
             
@@ -528,16 +602,6 @@ function getStatusBadge($status) {
                     </div>
                     <div class="stats-title">Total Income</div>
                     <div class="stats-value">₱<?= number_format($total_income, 2) ?></div>
-                </div>
-            </div>
-            
-            <div class="col-md-3 mb-3">
-                <div class="stats-card">
-                    <div class="stats-icon">
-                        <i class="bi bi-check-circle"></i>
-                    </div>
-                    <div class="stats-title">Completed</div>
-                    <div class="stats-value"><?= $status_counts['Completed'] ?></div>
                 </div>
             </div>
         </div>

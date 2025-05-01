@@ -12,43 +12,71 @@ $start_date = $_GET['start_date'] ?? '';
 $end_date = $_GET['end_date'] ?? '';
 $branch_id = $_GET['branch'] ?? '';
 $membership_filter = $_GET['membership_filter'] ?? 'with_card';
+$card_type_filter = $_GET['card_type_filter'] ?? 'all';
 
-// Build the query to include card_code
-$query = "SELECT u.name, u.email, 
-                 MAX(b.has_membership_card) as has_membership_card,
-                 MAX(b.membership_code) as card_code
-          FROM users u
-          LEFT JOIN bookings b ON u.id = b.user_id
-          WHERE 1=1";
+// Base queries for different membership filters
+$members_query = "SELECT 
+                    m.id,
+                    COALESCE(u.name, m.customer_name) as name, 
+                    COALESCE(u.email, m.customer_email) as email, 
+                    m.card_type as membership_type,
+                    m.membership_code as card_code,
+                    m.created_at
+                  FROM membership_members m
+                  LEFT JOIN users u ON m.user_id = u.id
+                  WHERE 1=1";
 
+$users_query = "SELECT 
+                    u.id,
+                    u.name, 
+                    u.email, 
+                    'No Card' as membership_type,
+                    NULL as card_code,
+                    u.created_at
+                FROM users u
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM membership_members m 
+                    WHERE m.user_id = u.id
+                )";
+
+// Initialize parameters
 $params = [];
 $types = '';
 
-// Add date range filter
-if (!empty($start_date) && !empty($end_date)) {
-    $query .= " AND (b.booking_date BETWEEN ? AND ? OR u.created_at BETWEEN ? AND ?)";
-    $params[] = $start_date;
-    $params[] = $end_date;
-    $params[] = $start_date;
-    $params[] = $end_date;
-    $types .= 'ssss';
-}
-
 // Add branch filter if provided
 if (!empty($branch_id)) {
-    $query .= " AND b.branch_id = ?";
+    $members_query .= " AND m.branch_id = ?";
     $params[] = $branch_id;
     $types .= 'i';
 }
 
-// Add membership filter
-if ($membership_filter === 'with_card') {
-    $query .= " AND EXISTS (SELECT 1 FROM bookings WHERE user_id = u.id AND has_membership_card = 1)";
-} elseif ($membership_filter === 'no_card') {
-    $query .= " AND NOT EXISTS (SELECT 1 FROM bookings WHERE user_id = u.id AND has_membership_card = 1)";
+// Add date range filter
+if (!empty($start_date) && !empty($end_date)) {
+    $members_query .= " AND (m.created_at BETWEEN ? AND ?)";
+    $users_query .= " AND (u.created_at BETWEEN ? AND ?)";
+    $params[] = $start_date;
+    $params[] = $end_date;
+    $types .= 'ss';
 }
 
-$query .= " GROUP BY u.id ORDER BY u.created_at DESC";
+// Determine which query to use based on filter
+if ($membership_filter === 'with_card') {
+    $query = $members_query;
+    
+    // Card type filter when showing members with cards
+    if ($card_type_filter !== 'all') {
+        $query .= " AND m.card_type = ?";
+        $params[] = $card_type_filter;
+        $types .= 's';
+    }
+} elseif ($membership_filter === 'no_card') {
+    $query = $users_query;
+} elseif ($membership_filter === 'all') {
+    // Combine both queries with UNION
+    $query = "($members_query) UNION ALL ($users_query)";
+}
+
+$query .= " ORDER BY created_at DESC";
 
 // Prepare and execute the query
 $stmt = $conn->prepare($query);
@@ -66,24 +94,41 @@ require_once '../vendor/autoload.php';
 $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
 $sheet = $spreadsheet->getActiveSheet();
 
-// Add simple column headers
-$sheet->fromArray(['Name', 'Email', 'Membership', 'Card Code'], null, 'A1');
-
-// Style the headers
+// Add headers with styling
 $headerStyle = [
-    'font' => ['bold' => true]
+    'font' => ['bold' => true, 'color' => ['rgb' => '000000']],
+    'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '6C757D']],
+    'borders' => [
+        'allBorders' => [
+            'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+            'color' => ['rgb' => '000000']
+        ]
+    ]
 ];
+
+$sheet->fromArray(['Name', 'Email', 'Membership', 'Card Code'], null, 'A1');
 $sheet->getStyle('A1:D1')->applyFromArray($headerStyle);
 
-// Add data starting from row 2
+// Add data with borders
 $row = 2;
 foreach ($users as $user) {
     $sheet->fromArray([
         $user['name'],
         $user['email'],
-        $user['has_membership_card'] ? 'Yes' : 'No',
+        $user['membership_type'],
         $user['card_code'] ?? ''
     ], null, "A$row");
+    
+    // Apply borders to all cells
+    $sheet->getStyle("A$row:D$row")->applyFromArray([
+        'borders' => [
+            'allBorders' => [
+                'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                'color' => ['rgb' => '000000']
+            ]
+        ]
+    ]);
+    
     $row++;
 }
 

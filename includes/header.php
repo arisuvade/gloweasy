@@ -269,7 +269,7 @@ if ($isSuperAdmin) {
             </a>
             <a href="<?= $basePath ?>admin/manage_users.php" class="<?= $currentPage == 'manage_users.php' ? 'active' : '' ?>">
                     <i class="bi bi-people-fill"></i>
-                    <span>Users</span>
+                    <span>Customers</span>
                 </a>
             <a href="<?= $basePath ?>admin/reports.php" class="<?= $currentPage == 'reports.php' ? 'active' : '' ?>">
                 <i class="bi bi-graph-up"></i>

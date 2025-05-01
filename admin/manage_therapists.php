@@ -459,6 +459,23 @@ function formatDateRange($start, $end) {
         .modal-title {
             color: var(--dark-text);
         }
+
+        .unavailability-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .unavailability-badge {
+            background-color: #FFF3CD;
+            color: #856404;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            display: inline-block;
+            border: 1px solid #FFEEBA;
+            width: fit-content;
+        }
     </style>
 </head>
 <body>
@@ -468,40 +485,30 @@ function formatDateRange($start, $end) {
     <div class="main-content">
         <h1>Manage Therapists</h1>
         
-        <!-- Add Therapist Form -->
+        <!-- Updated Add Therapist Form -->
         <div class="card">
             <div class="card-body">
                 <h2 class="mb-4">Add New Therapist</h2>
                 <form id="addTherapistForm">
                     <input type="hidden" name="action" value="add_therapist">
                     <div class="row g-3">
-                        <div class="col-md-3">
+                        <div class="col-md-6">
                             <label class="form-label">Name</label>
                             <input type="text" name="name" class="form-control" required>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-4">
                             <label class="form-label">Role</label>
                             <select name="role" class="form-select" required>
-                                <option value="Head Therapist">Head Therapist</option>
+                                <option value="Therapist" selected>Therapist</option>
                                 <option value="Licensed Massage Therapist">Licensed Massage Therapist</option>
                                 <option value="Senior Therapist">Senior Therapist</option>
-                                <option value="Therapist">Therapist</option>
+                                <option value="Head Therapist">Head Therapist</option>
                             </select>
                         </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Branch</label>
-                            <select name="branch_id" class="form-select" <?= $is_superadmin ? '' : 'disabled' ?> required>
-                                <?php if ($is_superadmin): ?>
-                                    <?php foreach ($branches as $branch_option): ?>
-                                        <option value="<?= $branch_option['id'] ?>"><?= htmlspecialchars($branch_option['name']) ?></option>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <option value="<?= $branches[0]['id'] ?? '' ?>"><?= htmlspecialchars($branch) ?></option>
-                                <?php endif; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-3 d-flex align-items-end">
-                            <button type="submit" class="btn btn-oblong">Add Therapist</button>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn" style="background-color: var(--secondary-green); color: white;">
+                                Add Therapist
+                            </button>
                         </div>
                     </div>
                 </form>
@@ -518,10 +525,8 @@ function formatDateRange($start, $end) {
                             <tr>
                                 <th>Name</th>
                                 <th>Role</th>
-                                <th>Branch</th>
                                 <th>Status</th>
                                 <th>Unavailability</th>
-                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -529,28 +534,29 @@ function formatDateRange($start, $end) {
                             <tr>
                                 <td><?= htmlspecialchars($therapist['name']) ?></td>
                                 <td><?= htmlspecialchars($therapist['role']) ?></td>
-                                <td><?= htmlspecialchars($therapist['branch_name'] ?? 'N/A') ?></td>
                                 <td>
                                     <span class="status-badge status-<?= $therapist['is_active'] ? 'active' : 'inactive' ?>">
                                         <?= $therapist['is_active'] ? 'Active' : 'Inactive' ?>
                                     </span>
                                 </td>
                                 <td>
-                                    <?php 
-                                    $therapist_availability = array_filter($availability_records, function($a) use ($therapist) {
-                                        return $a['therapist_id'] == $therapist['id'];
-                                    });
-                                    
-                                    foreach ($therapist_availability as $availability): ?>
-                                        <span class="unavailability-badge" 
-                                              data-id="<?= $availability['id'] ?>"
-                                              data-start="<?= $availability['start_date'] ?>"
-                                              data-end="<?= $availability['end_date'] ?>"
-                                              data-reason="<?= $availability['reason'] ?>">
-                                            <?= formatDateRange($availability['start_date'], $availability['end_date']) ?>
-                                            <i class="bi bi-x-circle cancel-unavailability" style="cursor:pointer; margin-left:5px;"></i>
-                                        </span>
-                                    <?php endforeach; ?>
+                                    <div class="unavailability-container">
+                                        <?php 
+                                        $therapist_availability = array_filter($availability_records, function($a) use ($therapist) {
+                                            return $a['therapist_id'] == $therapist['id'];
+                                        });
+                                        
+                                        foreach ($therapist_availability as $availability): ?>
+                                            <span class="unavailability-badge" 
+                                                data-id="<?= $availability['id'] ?>"
+                                                data-start="<?= $availability['start_date'] ?>"
+                                                data-end="<?= $availability['end_date'] ?>"
+                                                data-reason="<?= $availability['reason'] ?>">
+                                                <?= formatDateRange($availability['start_date'], $availability['end_date']) ?>
+                                                <i class="bi bi-x-circle cancel-unavailability" style="cursor:pointer; margin-left:5px;"></i>
+                                            </span>
+                                        <?php endforeach; ?>
+                                    </div>
                                 </td>
                                 <td>
                                     <button class="action-btn edit-btn edit-therapist"
@@ -604,18 +610,6 @@ function formatDateRange($start, $end) {
                                 <option value="Therapist">Therapist</option>
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Branch</label>
-                            <select name="branch_id" class="form-select" id="editTherapistBranch" <?= $is_superadmin ? '' : 'disabled' ?> required>
-                                <?php if ($is_superadmin): ?>
-                                    <?php foreach ($branches as $branch_option): ?>
-                                        <option value="<?= $branch_option['id'] ?>"><?= htmlspecialchars($branch_option['name']) ?></option>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <option value="<?= $branches[0]['id'] ?? '' ?>"><?= htmlspecialchars($branch) ?></option>
-                                <?php endif; ?>
-                            </select>
-                        </div>
                         <div class="mb-3 form-check">
                             <input type="checkbox" name="is_active" class="form-check-input" id="editTherapistActive">
                             <label class="form-check-label" for="editTherapistActive">Active</label>
@@ -623,8 +617,10 @@ function formatDateRange($start, $end) {
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-oblong-outline" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-oblong" id="saveTherapistChanges">Save changes</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn" style="background-color: var(--secondary-green); color: white;" id="saveTherapistChanges">
+                        Save Changes
+                    </button>
                 </div>
             </div>
         </div>
@@ -661,8 +657,10 @@ function formatDateRange($start, $end) {
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-oblong-outline" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-oblong" id="saveUnavailable">Set Unavailable</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn" style="background-color: var(--secondary-green); color: white;" id="saveUnavailable">
+                        Set Unavailable
+                    </button>
                 </div>
             </div>
         </div>

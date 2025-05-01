@@ -297,7 +297,7 @@ $conn->close();
             
             <!-- User Report Card -->
 <div class="report-card">
-    <h2 class="report-title">User Report</h2>
+    <h2 class="report-title">Customer Report</h2>
     <form method="POST" class="row g-3 align-items-end">
         <input type="hidden" name="report_type" value="user">
         
@@ -318,7 +318,7 @@ $conn->close();
             <select class="form-select" name="membership_filter">
                 <option value="with_card">With Membership Card</option>
                 <option value="no_card">No Membership Card</option>
-                <option value="all">All Users</option>
+                <option value="all">All Customers</option>
             </select>
         </div>
         

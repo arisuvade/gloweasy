@@ -25,34 +25,102 @@ if (!$admin) {
 }
 
 $branch = $admin['branch'];
+$is_superadmin = ($branch === 'Owner');
 
-// Handle user deletion
-if (isset($_POST['delete_user'])) {
-    $user_id = $_POST['user_id'];
-    
-    // Begin transaction
-    $conn->begin_transaction();
+// Handle all CRUD operations
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
     
     try {
-        // Delete from bookings first (due to foreign key constraints)
-        $stmt = $conn->prepare("DELETE FROM bookings WHERE user_id = ? AND branch_id = (SELECT id FROM branches WHERE name = ?)");
-        $stmt->bind_param("is", $user_id, $branch);
-        $stmt->execute();
-        $stmt->close();
+        switch ($action) {
+            case 'add_member':
+                $customer_name = $_POST['customer_name'] ?? '';
+                $customer_email = $_POST['customer_email'] ?? '';
+                $card_type = $_POST['card_type'] ?? '';
+                $membership_code = $_POST['membership_code'] ?? '';
+                
+                // Get branch ID
+                $branch_id = $conn->query("SELECT id FROM branches WHERE name = '$branch'")->fetch_assoc()['id'];
+                
+                $stmt = $conn->prepare("INSERT INTO membership_members (customer_name, customer_email, branch_id, card_type, membership_code) 
+                                        VALUES (?, ?, ?, ?, ?)");
+                $stmt->bind_param("ssiss", $customer_name, $customer_email, $branch_id, $card_type, $membership_code);
+                break;
+                
+            case 'delete_member':
+                $member_id = $_POST['member_id'] ?? 0;
+                
+                // Verify member belongs to admin's branch
+                $verify_stmt = $conn->prepare("SELECT id FROM membership_members WHERE id = ? AND branch_id = (SELECT id FROM branches WHERE name = ?)");
+                $verify_stmt->bind_param("is", $member_id, $branch);
+                $verify_stmt->execute();
+                
+                if ($verify_stmt->get_result()->num_rows === 0) {
+                    throw new Exception("Unauthorized to delete this member");
+                }
+                $verify_stmt->close();
+                
+                $stmt = $conn->prepare("DELETE FROM membership_members WHERE id = ?");
+                $stmt->bind_param("i", $member_id);
+                break;
+                
+            case 'delete_user':
+                $user_id = $_POST['user_id'];
+                
+                // Begin transaction
+                $conn->begin_transaction();
+                
+                try {
+                    // Delete from bookings first (due to foreign key constraints)
+                    $stmt = $conn->prepare("DELETE FROM bookings WHERE user_id = ? AND branch_id = (SELECT id FROM branches WHERE name = ?)");
+                    $stmt->bind_param("is", $user_id, $branch);
+                    $stmt->execute();
+                    $stmt->close();
+                    
+                    // Delete from membership_members
+                    $stmt = $conn->prepare("DELETE FROM membership_members WHERE user_id = ? AND branch_id = (SELECT id FROM branches WHERE name = ?)");
+                    $stmt->bind_param("is", $user_id, $branch);
+                    $stmt->execute();
+                    $stmt->close();
+                    
+                    // Then delete the user if they have no bookings in other branches
+                    $stmt = $conn->prepare("DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM bookings WHERE user_id = ? AND branch_id != (SELECT id FROM branches WHERE name = ?))");
+                    $stmt->bind_param("iis", $user_id, $user_id, $branch);
+                    $stmt->execute();
+                    $stmt->close();
+                    
+                    $conn->commit();
+                    $_SESSION['success_message'] = "User deleted successfully";
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    $_SESSION['error_message'] = "Error deleting user: " . $e->getMessage();
+                }
+                
+                header("Location: manage_users.php");
+                exit();
+        }
         
-        // Then delete the user if they have no bookings in other branches
-        $stmt = $conn->prepare("DELETE FROM users WHERE id = ? AND NOT EXISTS (SELECT 1 FROM bookings WHERE user_id = ? AND branch_id != (SELECT id FROM branches WHERE name = ?))");
-        $stmt->bind_param("iis", $user_id, $user_id, $branch);
-        $stmt->execute();
-        $stmt->close();
+        if (isset($stmt)) {
+            $stmt->execute();
+            $stmt->close();
+        }
         
-        $conn->commit();
-        $_SESSION['success_message'] = "User deleted successfully";
+        // Return JSON for AJAX requests
+        if (isset($_POST['ajax'])) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true]);
+            exit();
+        }
+        
     } catch (Exception $e) {
-        $conn->rollback();
-        $_SESSION['error_message'] = "Error deleting user: " . $e->getMessage();
+        if (isset($_POST['ajax'])) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            exit();
+        }
     }
     
+    // Redirect for non-AJAX requests
     header("Location: manage_users.php");
     exit();
 }
@@ -64,42 +132,92 @@ if (isset($_GET['export_excel'])) {
     // Get filter values
     $search_term = $_GET['search'] ?? '';
     $membership_filter = $_GET['membership_filter'] ?? 'with_card';
+    $card_type_filter = $_GET['card_type_filter'] ?? 'all';
     
-    // Build query for current branch only
-    $query = "SELECT u.name, u.email, 
-                     MAX(b.has_membership_card) as has_membership_card,
-                     MAX(b.membership_code) as card_code
-              FROM users u
-              LEFT JOIN bookings b ON u.id = b.user_id 
-              WHERE b.branch_id = (SELECT id FROM branches WHERE name = ?)";
+    // Build base queries
+    $members_query = "SELECT 
+                        m.id,
+                        COALESCE(u.name, m.customer_name) as name, 
+                        COALESCE(u.email, m.customer_email) as email, 
+                        m.card_type as membership_type,
+                        m.membership_code as card_code,
+                        m.created_at
+                      FROM membership_members m
+                      LEFT JOIN users u ON m.user_id = u.id
+                      WHERE m.branch_id = (SELECT id FROM branches WHERE name = ?)";
     
-    $params = [$branch];
-    $types = 's';
+    $users_query = "SELECT 
+                      u.id,
+                      u.name, 
+                      u.email, 
+                      'No Card' as membership_type,
+                      NULL as card_code,
+                      u.created_at
+                    FROM users u
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM membership_members m 
+                        WHERE m.user_id = u.id
+                        AND m.branch_id = (SELECT id FROM branches WHERE name = ?)
+                    )";
     
-    // Membership filter - only check for cards issued at this branch
+    // Initialize parameters
+    $params = [];
+    $types = '';
+    
+    // Determine which query to use based on filter
     if ($membership_filter === 'with_card') {
-        $query .= " AND u.id IN (SELECT DISTINCT user_id FROM bookings WHERE has_membership_card = 1 AND branch_id = (SELECT id FROM branches WHERE name = ?))";
-        $params[] = $branch;
-        $types .= 's';
+        $query = $members_query;
+        $params = [$branch];
+        $types = 's';
+        
+        // Card type filter when showing members with cards
+        if ($card_type_filter !== 'all') {
+            $query .= " AND m.card_type = ?";
+            $params[] = $card_type_filter;
+            $types .= 's';
+        }
     } elseif ($membership_filter === 'no_card') {
-        $query .= " AND u.id NOT IN (SELECT DISTINCT user_id FROM bookings WHERE has_membership_card = 1 AND branch_id = (SELECT id FROM branches WHERE name = ?))";
-        $params[] = $branch;
-        $types .= 's';
+        $query = $users_query;
+        $params = [$branch];
+        $types = 's';
+    } elseif ($membership_filter === 'all') {
+        // Combine both queries with UNION
+        $query = "($members_query) UNION ALL ($users_query)";
+        $params = [$branch, $branch];
+        $types = 'ss';
     }
     
-    // Search filter
+    // Apply search term if provided
     if (!empty($search_term)) {
-        $query .= " AND (u.name LIKE ? OR u.email LIKE ?)";
         $search_param = "%$search_term%";
-        $params[] = $search_param;
-        $params[] = $search_param;
-        $types .= 'ss';
+        if ($membership_filter === 'all') {
+            // For combined query, we need to wrap it and apply WHERE to the outer query
+            $query = "SELECT * FROM ($query) AS combined WHERE name LIKE ? OR email LIKE ?";
+            $params[] = $search_param;
+            $params[] = $search_param;
+            $types .= 'ss';
+        } else {
+            // For single queries, just add WHERE clause
+            $query .= " AND (COALESCE(u.name, m.customer_name) LIKE ? OR COALESCE(u.email, m.customer_email) LIKE ?)";
+            $params[] = $search_param;
+            $params[] = $search_param;
+            $types .= 'ss';
+        }
     }
     
-    $query .= " GROUP BY u.id";
+    // Order results
+    $query .= " ORDER BY created_at DESC";
     
+    // Prepare and execute the query
     $stmt = $conn->prepare($query);
-    $stmt->bind_param($types, ...$params);
+    if ($stmt === false) {
+        die('Error preparing statement: ' . $conn->error);
+    }
+    
+    if (!empty($params)) {
+        $stmt->bind_param($types, ...$params);
+    }
+    
     $stmt->execute();
     $result = $stmt->get_result();
     $users = $result->fetch_all(MYSQLI_ASSOC);
@@ -130,7 +248,7 @@ if (isset($_GET['export_excel'])) {
         $sheet->fromArray([
             $user['name'],
             $user['email'],
-            $user['has_membership_card'] ? 'Yes' : 'No',
+            $user['membership_type'],
             $user['card_code'] ?? ''
         ], null, "A$row");
         
@@ -167,60 +285,105 @@ if (isset($_GET['export_excel'])) {
 // Get filter values from GET - default to 'with_card'
 $search_term = $_GET['search'] ?? '';
 $membership_filter = $_GET['membership_filter'] ?? 'with_card';
+$card_type_filter = $_GET['card_type_filter'] ?? 'all';
 
-// Build query for table display - current branch only
-$query = "SELECT u.id, u.name, u.email, u.created_at, 
-                 MAX(b.has_membership_card) as has_membership_card,
-                 COUNT(b.id) as total_bookings
-          FROM users u
-          LEFT JOIN bookings b ON u.id = b.user_id
-          WHERE b.branch_id = (SELECT id FROM branches WHERE name = ?)";
-          
-$params = [$branch];
-$types = 's';
+// Main query for members with cards (from membership_members table)
+$members_query = "SELECT 
+                    id,
+                    customer_name as name, 
+                    customer_email as email, 
+                    created_at,
+                    card_type as membership_type,
+                    membership_code as card_code
+                  FROM membership_members 
+                  WHERE branch_id = (SELECT id FROM branches WHERE name = ?)";
+$members_params = [$branch];
+$members_types = 's';
 
-// Membership filter - only check for cards issued at this branch
+// Query for users without cards (from users table)
+$users_query = "SELECT 
+                    u.id,
+                    u.name, 
+                    u.email, 
+                    u.created_at,
+                    'No Card' as membership_type,
+                    NULL as card_code
+                FROM users u
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM membership_members m 
+                    WHERE m.user_id = u.id
+                    AND m.branch_id = (SELECT id FROM branches WHERE name = ?)
+                )";
+$users_params = [$branch];
+$users_types = 's';
+
+// Apply filters to members query
 if ($membership_filter === 'with_card') {
-    $query .= " AND u.id IN (SELECT DISTINCT user_id FROM bookings WHERE has_membership_card = 1 AND branch_id = (SELECT id FROM branches WHERE name = ?))";
-    $params[] = $branch;
-    $types .= 's';
+    if ($card_type_filter !== 'all') {
+        $members_query .= " AND card_type = ?";
+        $members_params[] = $card_type_filter;
+        $members_types .= 's';
+    }
 } elseif ($membership_filter === 'no_card') {
-    $query .= " AND u.id NOT IN (SELECT DISTINCT user_id FROM bookings WHERE has_membership_card = 1 AND branch_id = (SELECT id FROM branches WHERE name = ?))";
-    $params[] = $branch;
-    $types .= 's';
+    $members_query .= " AND 1=0"; // Return no results
 }
 
-// Search filter
+// Apply filters to users query
+if ($membership_filter === 'with_card') {
+    $users_query .= " AND 1=0"; // Return no results
+} elseif ($membership_filter === 'no_card') {
+    // No additional filters needed
+}
+
+// Apply search term to both queries
 if (!empty($search_term)) {
-    $query .= " AND (u.name LIKE ? OR u.email LIKE ?)";
     $search_param = "%$search_term%";
-    $params[] = $search_param;
-    $params[] = $search_param;
-    $types .= 'ss';
+    
+    $members_query .= " AND (customer_name LIKE ? OR customer_email LIKE ?)";
+    $members_params[] = $search_param;
+    $members_params[] = $search_param;
+    $members_types .= 'ss';
+    
+    $users_query .= " AND (u.name LIKE ? OR u.email LIKE ?)";
+    $users_params[] = $search_param;
+    $users_params[] = $search_param;
+    $users_types .= 'ss';
 }
 
-$query .= " GROUP BY u.id
-           ORDER BY u.created_at DESC";
+// Execute both queries
+$members = [];
+$users = [];
 
-$stmt = $conn->prepare($query);
-$stmt->bind_param($types, ...$params);
+// Get members with cards
+$stmt = $conn->prepare($members_query);
+$stmt->bind_param($members_types, ...$members_params);
 $stmt->execute();
-$result = $stmt->get_result();
-$users = $result->fetch_all(MYSQLI_ASSOC);
+$members = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
+
+// Get users without cards
+$stmt = $conn->prepare($users_query);
+$stmt->bind_param($users_types, ...$users_params);
+$stmt->execute();
+$users = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
+
+// Combine results
+$all_users = array_merge($members, $users);
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Users</title>
+    <title>Manage Customers</title>
     <link rel="icon" type="image/png" sizes="32x32" href="../assets/images/favicon-32x32.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <style>
         :root {
             --primary-white: #ffffff;
@@ -382,13 +545,19 @@ $stmt->close();
             text-align: center;
         }
         
-        .membership-yes { 
+        .membership-vip { 
             background-color: #D4EDDA; 
             color: #155724; 
             border: 1px solid #C3E6CB;
         }
         
-        .membership-no { 
+        .membership-elite { 
+            background-color: #D1ECF1; 
+            color: #0C5460; 
+            border: 1px solid #BEE5EB;
+        }
+        
+        .membership-none { 
             background-color: #F8D7DA; 
             color: #721C24; 
             border: 1px solid #F5C6CB;
@@ -439,13 +608,41 @@ $stmt->close();
         .btn-excel:hover {
             background-color: #186138;
         }
+
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            background-color: white;
+            margin-bottom: 2rem;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        .add-member-btn {
+            background-color: var(--secondary-green);
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 30px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .add-member-btn:hover {
+            background-color: var(--oblong-hover);
+            color: white;
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
     <?php include '../includes/header.php'; ?>
 
     <div class="main-content">
-        <h1 class="mb-4">Manage Users</h1>
+        <h1 class="mb-4">Manage Customers</h1>
         
         <!-- Display success/error messages -->
         <?php if (isset($_SESSION['success_message'])): ?>
@@ -464,11 +661,47 @@ $stmt->close();
             <?php unset($_SESSION['error_message']); ?>
         <?php endif; ?>
         
+        <!-- Add Member Card -->
+        <div class="card">
+            <div class="card-body">
+                <h2 class="mb-4">Add Manual Member</h2>
+                <form id="addMemberForm">
+                    <input type="hidden" name="action" value="add_member">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Name</label>
+                            <input type="text" name="customer_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email (Optional)</label>
+                            <input type="email" name="customer_email" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Card Type</label>
+                            <select name="card_type" class="form-select" required>
+                                <option value="VIP">VIP</option>
+                                <option value="Elite">Elite</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Membership Code</label>
+                            <input type="text" name="membership_code" class="form-control" required>
+                        </div>
+                        <div class="col-md-1 d-flex align-items-end">
+                            <button type="submit" class="btn" style="background-color: var(--secondary-green); color: white;">
+                                <i class="bi bi-plus-lg"></i> Add
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- Filter/Search Form -->
         <div class="filter-section">
             <form method="get" class="row g-3 align-items-center">
                 <!-- Search Box -->
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <div class="search-box">
                         <i class="bi bi-search"></i>
                         <input type="text" class="form-control" name="search" placeholder="Search Name, Email" 
@@ -478,59 +711,67 @@ $stmt->close();
                 </div>
                 
                 <!-- Membership Filter -->
-                <div class="col-md-5">
-                    <select class="form-select" id="membership_filter" name="membership_filter" onchange="this.form.submit()">
+                <div class="col-md-3">
+                    <select class="form-select" id="membership_filter" name="membership_filter">
                         <option value="with_card" <?= $membership_filter === 'with_card' ? 'selected' : '' ?>>With Membership Card</option>
                         <option value="no_card" <?= $membership_filter === 'no_card' ? 'selected' : '' ?>>No Membership Card</option>
-                        <option value="all" <?= $membership_filter === 'all' ? 'selected' : '' ?>>All Users</option>
+                        <option value="all" <?= $membership_filter === 'all' ? 'selected' : '' ?>>All Customers</option>
+                    </select>
+                </div>
+                
+                <!-- Card Type Filter (only shown when viewing members with cards) -->
+                <div class="col-md-3">
+                    <select class="form-select" id="card_type_filter" name="card_type_filter" <?= $membership_filter !== 'with_card' ? 'disabled' : '' ?> style="<?= $membership_filter !== 'with_card' ? 'opacity: 0.5;' : '' ?>">
+                        <option value="all" <?= $card_type_filter === 'all' ? 'selected' : '' ?>>All Card Types</option>
+                        <option value="VIP" <?= $card_type_filter === 'VIP' ? 'selected' : '' ?>>VIP Only</option>
+                        <option value="Elite" <?= $card_type_filter === 'Elite' ? 'selected' : '' ?>>Elite Only</option>
                     </select>
                 </div>
                 
                 <!-- Export Button -->
                 <div class="col-md-2">
-                <button type="submit" name="export_excel" class="btn-oblong btn-excel w-100">
-                    <i class="fas fa-file-excel me-2"></i> Export to Excel
-                </button>
+                    <button type="submit" name="export_excel" class="btn-oblong btn-excel w-100">
+                        <i class="fas fa-file-excel me-2"></i> Export to Excel
+                    </button>
                 </div>
             </form>
         </div>
 
-        <!-- Users Table -->
+        <!-- Customers Table -->
         <div class="table-responsive">
             <table class="table">
                 <thead>
                     <tr>
-                        <th>ID</th>
                         <th>Name</th>
                         <th>Email</th>
                         <th>Membership</th>
-                        <th>Total Bookings</th>
-                        <th>Registration Date</th>
-                        <th>Actions</th>
+                        <th>Card Code</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if (empty($users)): ?>
-                        <tr>
-                            <td colspan="7" class="text-center">No users found</td>
-                        </tr>
+                    <?php if (empty($all_users)): ?>
+                        <tr><td colspan="5" class="text-center">No customers found</td></tr>
                     <?php else: ?>
-                        <?php foreach ($users as $user): ?>
+                        <?php foreach ($all_users as $user): ?>
                             <tr>
-                                <td><?= htmlspecialchars($user['id']) ?></td>
                                 <td><?= htmlspecialchars($user['name']) ?></td>
                                 <td><?= htmlspecialchars($user['email']) ?></td>
                                 <td>
-                                    <span class="membership-badge <?= $user['has_membership_card'] ? 'membership-yes' : 'membership-no' ?>">
-                                        <?= $user['has_membership_card'] ? 'Has Card' : 'No Card' ?>
+                                    <span class="membership-badge membership-<?= strtolower(str_replace(' ', '-', $user['membership_type'])) ?>">
+                                        <?= $user['membership_type'] ?>
                                     </span>
                                 </td>
-                                <td><?= $user['total_bookings'] ?></td>
-                                <td><?= date('M d, Y', strtotime($user['created_at'])) ?></td>
+                                <td><?= htmlspecialchars($user['card_code'] ?? '') ?></td>
                                 <td>
-                                    <form method="post" class="delete-form" style="display: inline-block;">
-                                        <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
-                                        <button type="submit" name="delete_user" class="action-btn btn-delete">
+                                    <form method="post" class="delete-form">
+                                        <?php if (isset($user['id']) && $user['membership_type'] !== 'No Card'): ?>
+                                            <input type="hidden" name="action" value="delete_member">
+                                            <input type="hidden" name="member_id" value="<?= $user['id'] ?>">
+                                        <?php else: ?>
+                                            <input type="hidden" name="action" value="delete_user">
+                                            <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
+                                        <?php endif; ?>
+                                        <button type="submit" class="action-btn btn-delete">
                                             <i class="bi bi-trash"></i> Delete
                                         </button>
                                     </form>
@@ -543,7 +784,6 @@ $stmt->close();
         </div>
     </div>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
@@ -601,6 +841,69 @@ $stmt->close();
                     });
                 }
             });
+        });
+
+        // Handle form submissions for adding member
+        $('#addMemberForm').submit(function(e) {
+            e.preventDefault();
+            const formData = $(this).serialize() + '&ajax=1';
+            
+            $.ajax({
+                url: 'manage_users.php',
+                type: 'POST',
+                data: formData,
+                dataType: 'json', // Expect JSON response
+                success: function(result) {
+                    if (result.success) {
+                        $('#addMemberForm')[0].reset();
+                        Swal.fire(
+                            'Success!',
+                            'Member added successfully.',
+                            'success'
+                        ).then(() => {
+                            location.reload();
+                        });
+                    } else {
+                        Swal.fire(
+                            'Error!',
+                            result.error || 'Unknown error occurred',
+                            'error'
+                        );
+                    }
+                },
+                error: function(xhr, status, error) {
+                    Swal.fire(
+                        'Error!',
+                        'Failed to add member: ' + error,
+                        'error'
+                    );
+                }
+            });
+        });
+
+        // Disable card type filter when not viewing "With Membership Card"
+        function updateCardTypeFilter() {
+            const membershipFilter = document.getElementById('membership_filter');
+            const cardTypeFilter = document.getElementById('card_type_filter');
+            
+            if (membershipFilter.value === 'with_card') {
+                cardTypeFilter.disabled = false;
+                cardTypeFilter.style.opacity = '1';
+            } else {
+                cardTypeFilter.disabled = true;
+                cardTypeFilter.style.opacity = '0.5';
+                // Reset to 'all' when disabled
+                cardTypeFilter.value = 'all';
+            }
+        }
+
+        // Initialize and add event listener
+        updateCardTypeFilter();
+        
+        document.getElementById('membership_filter').addEventListener('change', function() {
+            updateCardTypeFilter();
+            // Submit the form when filter changes
+            this.form.submit();
         });
     });
     </script>
